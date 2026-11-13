@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import os from 'node:os';
-import { Settings } from './settings';
+import { Settings, sshDest } from './settings';
 import { log } from './logger';
 import { SSH_EXE } from './platform';
 
@@ -15,7 +15,8 @@ function run(settings: Settings, cmd: string): Promise<{ code: number; out: stri
         '-o', 'BatchMode=yes',
         '-o', 'ConnectTimeout=15',
         '-o', 'StrictHostKeyChecking=accept-new',
-        `${settings.vpsUser || 'root'}@${settings.vpsHost}`,
+        '--',
+        sshDest(settings),
         cmd,
       ],
       { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true },
@@ -36,6 +37,11 @@ export interface VpsSetupResult {
 // configura o API server do Hermes na VPS da pessoa: token, .env, outbox e restart
 export async function autoConfigureVps(settings: Settings): Promise<VpsSetupResult> {
   if (!settings.vpsHost) return { ok: false, message: 'Preencha o endereço da VPS primeiro.' };
+  try {
+    sshDest(settings);
+  } catch {
+    return { ok: false, message: 'Usuário SSH ou endereço da VPS inválidos.' };
+  }
 
   const probe = await run(
     settings,

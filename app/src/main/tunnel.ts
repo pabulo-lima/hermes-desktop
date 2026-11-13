@@ -1,7 +1,7 @@
 import { spawn, ChildProcess } from 'node:child_process';
 import path from 'node:path';
 import os from 'node:os';
-import { Settings } from './settings';
+import { Settings, sshDest } from './settings';
 import { log } from './logger';
 import { SSH_EXE } from './platform';
 
@@ -14,6 +14,12 @@ let gen = 0;
 
 export function startTunnel(settings: Settings): void {
   if (!settings.vpsHost) return;
+  try {
+    sshDest(settings);
+  } catch {
+    log('[tunnel] usuário/endereço da VPS inválidos — túnel desligado');
+    return;
+  }
   stopping = false;
   gen++;
   if (proc && !proc.killed) proc.kill();
@@ -39,7 +45,8 @@ function spawnTunnel(settings: Settings, g: number): void {
       '-o', 'ConnectTimeout=10',
       '-o', 'BatchMode=yes',
       '-L', `${localPort}:127.0.0.1:8642`,
-      `${settings.vpsUser || 'root'}@${settings.vpsHost}`,
+      '--',
+      sshDest(settings),
     ],
     { stdio: ['ignore', 'ignore', 'pipe'] },
   );

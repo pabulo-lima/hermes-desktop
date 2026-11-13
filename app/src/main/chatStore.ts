@@ -75,6 +75,8 @@ function chatsDir(): string {
 }
 
 function chatFile(id: string): string {
+  // id vem do renderer via IPC: sem isso `../x` lê/grava .jsonl fora de chats/
+  if (!/^[a-z0-9-]{1,64}$/.test(String(id))) throw new Error('id de conversa inválido');
   return path.join(chatsDir(), `${id}.jsonl`);
 }
 
@@ -87,7 +89,8 @@ function newId(): string {
 export function saveMedia(buffer: ArrayBuffer, ext = 'webm'): string {
   const dir = path.join(chatsDir(), 'media');
   mkdirSync(dir, { recursive: true });
-  const name = `${newId()}.${ext}`;
+  // ext vem do renderer: só extensão simples, nunca caminho
+  const name = `${newId()}.${/^[a-z0-9]{1,5}$/.test(String(ext)) ? ext : 'bin'}`;
   writeFileSync(path.join(dir, name), Buffer.from(buffer));
   return name;
 }

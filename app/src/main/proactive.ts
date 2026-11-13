@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import os from 'node:os';
-import { Settings } from './settings';
+import { Settings, sshDest } from './settings';
 import { log } from './logger';
 import { SSH_EXE } from './platform';
 
@@ -14,7 +14,17 @@ let timer: ReturnType<typeof setInterval> | undefined;
 
 export function startProactive(settings: Settings, onMessage: (text: string) => void): void {
   stopProactive();
-  if (!settings.vpsHost) return;
+  if (!settings.vpsHost) {
+    // a caixa de saída só é lida via SSH; com Hermes local as mensagens proativas ficam desligadas
+    log('[proactive] sem VPS configurada — mensagens proativas desativadas');
+    return;
+  }
+  try {
+    sshDest(settings);
+  } catch {
+    log('[proactive] usuário/endereço da VPS inválidos — mensagens proativas desativadas');
+    return;
+  }
 
   timer = setInterval(() => {
     const proc = spawn(
@@ -24,7 +34,8 @@ export function startProactive(settings: Settings, onMessage: (text: string) => 
         '-o', 'BatchMode=yes',
         '-o', 'ConnectTimeout=10',
         '-o', 'StrictHostKeyChecking=accept-new',
-        `${settings.vpsUser || 'root'}@${settings.vpsHost}`,
+        '--',
+        sshDest(settings),
         OUTBOX_CMD,
       ],
       { stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true },
