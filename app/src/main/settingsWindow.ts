@@ -20,6 +20,7 @@ export function openSettingsWindow(autoVoiceInstall = false): void {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
     },
   });
   win.loadFile(path.join(__dirname, 'settings.html'));

@@ -2,54 +2,64 @@ import './types.d';
 
 const $ = (id: string) => document.getElementById(id) as HTMLInputElement;
 
-// Campos de chave: mostram a primeira metade e mascaram o resto quando fora de
-// foco. O valor real vive em dataset.real — `.value` pode conter a máscara.
-const halfMasked = (v: string) => {
-  const keep = Math.ceil(v.length / 2);
-  return v.slice(0, keep) + '\u2022'.repeat(v.length - keep);
-};
-
-const secretOf = (id: string) => ($(id).dataset.real ?? '').trim();
-
-function setSecret(id: string, value: string): void {
+// Segredos nunca voltam do processo principal: o campo fica vazio e o placeholder
+// diz se há valor salvo. Vazio ao salvar = manter o atual.
+function setSecret(id: string, configured: boolean): void {
   const el = $(id);
-  el.dataset.real = value;
-  if (document.activeElement !== el) el.value = halfMasked(value);
+  el.value = '';
+  el.placeholder = configured ? 'configurado — deixe vazio para manter' : 'não configurado';
 }
 
-for (const id of ['bridgeToken', 'groqApiKey']) {
-  const el = $(id);
-  el.addEventListener('input', () => { el.dataset.real = el.value; });
-  el.addEventListener('focus', () => { el.value = el.dataset.real ?? ''; });
-  el.addEventListener('blur', () => { el.value = halfMasked(el.dataset.real ?? ''); });
+for (const id of ['bridgeToken', 'groqApiKey'] as const) {
+  document.getElementById(`clear-${id}`)!.addEventListener('click', async () => {
+    await window.hermes.saveSettings(id === 'bridgeToken' ? { bridgeTokenClear: true } : { groqApiKeyClear: true });
+    await load();
+  });
 }
+
+document.getElementById('btn-voice-dir')!.addEventListener('click', async () => {
+  const s = await window.hermes.pickVoiceDir();
+  $('voiceServerDir').value = s.voiceServerDir;
+  pintarVoz(s.voiceServerDir);
+});
 
 async function load(): Promise<void> {
   const s = await window.hermes.getSettings();
   $('vpsHost').value = s.vpsHost;
   $('vpsUser').value = s.vpsUser;
-  setSecret('bridgeToken', s.bridgeToken);
-  setSecret('groqApiKey', s.groqApiKey);
+  $('bridgeUrl').value = s.bridgeUrl;
+  setSecret('bridgeToken', s.bridgeTokenSet);
+  setSecret('groqApiKey', s.groqApiKeySet);
   $('voiceServerDir').value = s.voiceServerDir;
   pintarVoz(s.voiceServerDir);
   $('hotkey').value = s.hotkey;
   ($('idleUnload') as unknown as HTMLSelectElement).value = String(s.idleUnloadMin);
 }
 
-async function saveAll(): Promise<void> {
-  await window.hermes.saveSettings({
-    vpsHost: $('vpsHost').value.trim(),
-    vpsUser: $('vpsUser').value.trim() || 'root',
-    bridgeToken: secretOf('bridgeToken'),
-    groqApiKey: secretOf('groqApiKey'),
-    voiceServerDir: $('voiceServerDir').value.trim(),
-    hotkey: $('hotkey').value.trim() || 'Control+Alt+Space',
-    idleUnloadMin: parseInt(($('idleUnload') as unknown as HTMLSelectElement).value, 10) || 0,
-  });
+async function saveAll(): Promise<boolean> {
+  const status = document.getElementById('status')!;
+  try {
+    await window.hermes.saveSettings({
+      bridgeUrl: $('bridgeUrl').value.trim(),
+      vpsHost: $('vpsHost').value.trim(),
+      vpsUser: $('vpsUser').value.trim() || 'root',
+      bridgeToken: $('bridgeToken').value.trim(),
+      groqApiKey: $('groqApiKey').value.trim(),
+      hotkey: $('hotkey').value.trim() || 'Control+Alt+Space',
+      idleUnloadMin: parseInt(($('idleUnload') as unknown as HTMLSelectElement).value, 10) || 0,
+    });
+  } catch (e) {
+    // erro de validação do processo principal ("Error invoking remote method ...: Error: <msg>")
+    status.textContent = String(e instanceof Error ? e.message : e).replace(/^.*Error: /, '');
+    status.className = 'err';
+    return false;
+  }
+  await load();
+  return true;
 }
 
 document.getElementById('btn-save')!.addEventListener('click', async () => {
-  await saveAll();
+  if (!(await saveAll())) return;
   const saved = document.getElementById('saved')!;
   saved.classList.remove('hidden');
   setTimeout(() => saved.classList.add('hidden'), 2500);
@@ -69,7 +79,7 @@ document.getElementById('btn-vps-setup')!.addEventListener('click', async () => 
   const status = document.getElementById('status')!;
   // salva tudo que foi digitado antes do setup — o load() do final recarrega o
   // formulário, e um save parcial descartaria os outros campos (ex.: chave Groq)
-  await saveAll();
+  if (!(await saveAll())) return;
   status.textContent = 'Configurando a VPS… (até 30 s)';
   status.className = '';
   const r = await window.hermes.vpsSetup();
@@ -77,7 +87,7 @@ document.getElementById('btn-vps-setup')!.addEventListener('click', async () => 
   status.className = r.ok ? 'ok' : 'err';
   // o token já foi gerado e salvo mesmo no sucesso parcial (container sem reiniciar,
   // porta 8642 fechada) — sem recarregar, o campo fica vazio e parece que falhou tudo
-  if (r.token) load();
+  if (r.tokenSet) load();
 });
 
 document.getElementById('btn-test')!.addEventListener('click', async () => {

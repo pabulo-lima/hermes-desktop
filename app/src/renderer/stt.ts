@@ -29,21 +29,12 @@ export async function transcribe(
   }
   let groqErr = '';
   if (engine === 'nuvem') {
-    if (!settings.groqApiKey) {
+    if (!settings.groqApiKeySet) {
       throw new Error('voz na nuvem sem chave Groq — preencha e clique em Salvar nas Configurações');
     }
     try {
-      const form = new FormData();
-      form.append('file', blob, filename);
-      form.append('model', 'whisper-large-v3-turbo');
-      form.append('language', 'pt');
-      const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${settings.groqApiKey}` },
-        body: form,
-      });
-      if (!res.ok) throw new Error(`Groq ${res.status}`);
-      return ((await res.json()) as { text: string }).text;
+      // a chamada sai do processo principal: a chave não chega ao renderer
+      return await window.hermes.sttGroq(await blob.arrayBuffer(), filename);
     } catch (e) {
       // rede/limite/chave inválida: tenta o whisper.cpp local abaixo, sem esconder a causa
       groqErr = e instanceof Error ? e.message : String(e);

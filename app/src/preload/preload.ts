@@ -30,6 +30,8 @@ contextBridge.exposeInMainWorld('hermes', {
   genSshKey: () => ipcRenderer.invoke('gen-ssh-key'),
   testBridge: () => ipcRenderer.invoke('test-bridge'),
   vpsSetup: () => ipcRenderer.invoke('vps-setup'),
+  pickVoiceDir: () => ipcRenderer.invoke('pick-voice-dir'),
+  sttGroq: (buf: ArrayBuffer, filename: string) => ipcRenderer.invoke('stt-groq', buf, filename),
   voiceInstall: () => ipcRenderer.invoke('voice-install'),
   onVoiceInstallAuto: (cb: () => void) => {
     ipcRenderer.on('voice-install-auto', () => cb());

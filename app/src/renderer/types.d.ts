@@ -2,6 +2,7 @@ export interface RendererSettings {
   hotkey: string;
   bridgeUrl: string;
   bridgeToken: string;
+  bridgeTokenSet: boolean;
   vpsHost: string;
   vpsUser: string;
   ttsSpeaker: string;
@@ -16,6 +17,7 @@ export interface RendererSettings {
   voiceEngine: 'xtts' | 'leve' | 'texto' | 'nuvem';
   windowsVoice: string;
   groqApiKey: string;
+  groqApiKeySet: boolean;
   edgeVoice: string;
   uiMode: 'overlay' | 'chat';
   chatPinned: boolean;
@@ -90,10 +92,12 @@ export interface HermesBridge {
   dragMove(dx: number, dy: number): void;
   dragEnd(): void;
   getSettings(): Promise<RendererSettings>;
-  saveSettings(patch: Partial<RendererSettings>): Promise<RendererSettings>;
+  saveSettings(patch: Partial<RendererSettings> & { bridgeTokenClear?: boolean; groqApiKeyClear?: boolean }): Promise<RendererSettings>;
+  pickVoiceDir(): Promise<RendererSettings>;
+  sttGroq(buf: ArrayBuffer, filename: string): Promise<string>;
   genSshKey(): Promise<{ publicKey: string; authorizeCommand: string }>;
   testBridge(): Promise<{ ok: boolean; message: string }>;
-  vpsSetup(): Promise<{ ok: boolean; message: string; token?: string }>;
+  vpsSetup(): Promise<{ ok: boolean; message: string; tokenSet?: boolean }>;
   voiceInstall(): Promise<{ ok: boolean; message: string }>;
   onVoiceInstallProgress(cb: (p: { etapa: string; detalhe?: string }) => void): void;
   onVoiceInstallAuto(cb: () => void): void;

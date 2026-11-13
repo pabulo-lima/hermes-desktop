@@ -8,12 +8,13 @@ import {
   screen,
   nativeImage,
   shell,
+  session,
   dialog,
   Notification,
 } from 'electron';
 import path from 'node:path';
 import { writeFileSync } from 'node:fs';
-import { loadSettings, saveSettings, Settings, Persona } from './settings';
+import { loadSettings, saveSettings, Settings, Persona, publicSettings, sanitizePatch } from './settings';
 import { log } from './logger';
 import {
   startVoiceServer,
@@ -268,6 +269,7 @@ function createOverlayWindow(): BrowserWindow {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
     },
   });
   overlay.setAlwaysOnTop(true, 'screen-saver');
@@ -362,7 +364,7 @@ function vozesDoMotor(): Electron.MenuItemConstructorOptions[] {
 }
 
 function notifySettingsChanged(): void {
-  win?.webContents.send('settings-changed', settings);
+  win?.webContents.send('settings-changed', publicSettings(settings));
 }
 
 // mesmo tempo da hibernação da voz: sem uso, o personagem recolhe para a bandeja
@@ -656,9 +658,11 @@ function setupIpc(): void {
     bumpIdleHide();
   });
 
-  ipcMain.handle('get-settings', () => settings);
+  ipcMain.handle('get-settings', () => publicSettings(settings));
 
-  ipcMain.handle('save-settings', (_e, patch: Partial<Settings>) => {
+  ipcMain.handle('save-settings', (_e, raw: unknown) => {
+    // renderer não é confiável: só chaves da tela de Configurações, validadas
+    const patch = sanitizePatch(raw, settings);
     const oldHotkey = settings.hotkey;
     const oldIdle = settings.idleUnloadMin;
     const oldMode = settings.uiMode;
@@ -691,7 +695,39 @@ function setupIpc(): void {
     refreshTrayMenu();
     notifySettingsChanged();
     bumpIdleHide();
-    return settings;
+    return publicSettings(settings);
+  });
+
+  // a pasta do voice-server vira executável (python da .venv): só o usuário escolhe, por diálogo nativo
+  ipcMain.handle('pick-voice-dir', async (e) => {
+    const parent = BrowserWindow.fromWebContents(e.sender);
+    const opts = { title: 'Pasta do servidor de voz', properties: ['openDirectory' as const] };
+    const r = parent ? await dialog.showOpenDialog(parent, opts) : await dialog.showOpenDialog(opts);
+    if (r.canceled || !r.filePaths[0]) return publicSettings(settings);
+    settings.voiceServerDir = r.filePaths[0];
+    saveSettings(settings);
+    setVoiceServerDir(settings.voiceServerDir);
+    if (settings.voiceEngine === 'xtts') {
+      stopVoiceServer();
+      setTimeout(() => startVoiceServer(), 2000);
+    }
+    return publicSettings(settings);
+  });
+
+  // a chave Groq não sai do processo principal: a transcrição na nuvem é feita daqui
+  ipcMain.handle('stt-groq', async (_e, buf: ArrayBuffer, filename: string) => {
+    if (!settings.groqApiKey) throw new Error('voz na nuvem sem chave Groq — preencha e clique em Salvar nas Configurações');
+    const form = new FormData();
+    form.append('file', new Blob([buf]), path.basename(String(filename || 'fala.webm')));
+    form.append('model', 'whisper-large-v3-turbo');
+    form.append('language', 'pt');
+    const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${settings.groqApiKey}` },
+      body: form,
+    });
+    if (!res.ok) throw new Error(`Groq ${res.status}`);
+    return ((await res.json()) as { text: string }).text;
   });
 
   ipcMain.handle('gen-ssh-key', () => ensureSshKey());
@@ -721,7 +757,8 @@ function setupIpc(): void {
       stopTunnel();
       startTunnel(settings);
     }
-    return result;
+    // o token fica no processo principal; a tela só precisa saber que existe
+    return { ok: result.ok, message: result.message, tokenSet: Boolean(result.token) };
   });
 
   // o painel do overlay mostra a mesma conversa do chat, em pares pergunta/resposta.
@@ -935,8 +972,28 @@ function setupIpc(): void {
     return settings.chatPinned;
   });
 
-  ipcMain.on('open-external', (_e, url: string) => {
-    if (/^https?:\/\//i.test(url)) shell.openExternal(url);
+  ipcMain.on('open-external', async (e, url: string) => {
+    let u: URL;
+    try {
+      u = new URL(String(url));
+    } catch {
+      return;
+    }
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return;
+    // link vem do texto do modelo: mostra o host antes de abrir (anti-phishing)
+    const parent = BrowserWindow.fromWebContents(e.sender);
+    const opts = {
+      type: 'question' as const,
+      buttons: ['Abrir', 'Cancelar'],
+      defaultId: 1,
+      cancelId: 1,
+      message: `Abrir no navegador?
+
+${u.host}`,
+      detail: u.href,
+    };
+    const r = parent ? await dialog.showMessageBox(parent, opts) : await dialog.showMessageBox(opts);
+    if (r.response === 0) shell.openExternal(u.href);
   });
 
   ipcMain.handle('voice-server-up', () => isVoiceServerUp());
@@ -1067,6 +1124,13 @@ if (!gotLock) {
         ]),
       );
     }
+    // vale para toda janela (overlay, chat, configurações): nada navega nem abre popup,
+    // e só o microfone (e afins de mídia) é concedido
+    app.on('web-contents-created', (_e, wc) => {
+      wc.on('will-navigate', (ev) => ev.preventDefault());
+      wc.setWindowOpenHandler(() => ({ action: 'deny' }));
+    });
+    session.defaultSession.setPermissionRequestHandler((_wc, perm, cb) => cb(perm === 'media' || perm === 'clipboard-sanitized-write'));
     settings = loadSettings();
     setVoiceServerDir(settings.voiceServerDir);
     setVoiceIdleMinutes(settings.idleUnloadMin);

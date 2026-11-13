@@ -76,7 +76,14 @@
 <body>
   <h1>Configurações do assistente</h1>
 
-  <h2>Conexão com o Hermes (VPS)</h2>
+  <h2>Conexão com o Hermes</h2>
+  <label for="bridgeUrl">Endereço da API do Hermes (vazio = via túnel SSH da VPS)</label>
+  <input type="text" id="bridgeUrl" placeholder="http://127.0.0.1:8642" />
+  <p class="hint">
+    Hermes local (Docker no mesmo PC): use http://127.0.0.1:8642 e deixe a VPS em branco.
+    Sem VPS, só endereços locais são aceitos.
+  </p>
+  <h2>VPS (opcional)</h2>
   <div class="row">
     <div>
       <label for="vpsHost">Endereço da VPS (IP ou domínio)</label>
@@ -88,7 +95,8 @@
     </div>
   </div>
   <label for="bridgeToken">Token da API (API_SERVER_KEY do Hermes)</label>
-  <input type="text" id="bridgeToken" placeholder="valor de API_SERVER_KEY no ~/.hermes/.env" />
+  <input type="password" id="bridgeToken" autocomplete="off" />
+  <button id="clear-bridgeToken">Remover token salvo</button>
   <p class="hint">
     No servidor, o arquivo ~/.hermes/.env precisa ter API_SERVER_ENABLED=true e API_SERVER_KEY com
     este mesmo valor. Depois reinicie o gateway do Hermes.
@@ -123,7 +131,8 @@
 
   <h2>Voz na nuvem</h2>
   <label for="groqApiKey">Chave da API Groq (transcrição de voz gratuita)</label>
-  <input type="text" id="groqApiKey" placeholder="gsk_..." />
+  <input type="password" id="groqApiKey" autocomplete="off" />
+  <button id="clear-groqApiKey">Remover chave salva</button>
   <p class="hint">
     Chave gratuita em console.groq.com/keys. Usada só quando o motor de voz é
     "Voz na nuvem" (menu do personagem → Voz). A fala usa as vozes gratuitas da
@@ -145,7 +154,8 @@
     depois da pausa demora ~15–20 s a mais (recarga dos modelos de voz).
   </p>
   <label for="voiceServerDir">Pasta do servidor de voz (vazio = padrão do projeto)</label>
-  <input type="text" id="voiceServerDir" placeholder="C:\caminho\para\voice-server" />
+  <input type="text" id="voiceServerDir" readonly />
+  <button id="btn-voice-dir">Escolher pasta…</button>
   <label for="hotkey">Atalho global para falar</label>
   <input type="text" id="hotkey" placeholder="Control+Alt+Space" />
   <p class="hint">Formato do Electron: Control, Alt, Shift, Super + tecla. Ex.: Control+Alt+Space, F9.</p>
