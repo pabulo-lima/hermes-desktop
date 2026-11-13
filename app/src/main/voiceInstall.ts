@@ -1,8 +1,7 @@
 import { app } from 'electron';
 import { spawn } from 'node:child_process';
-import { createWriteStream, existsSync, mkdirSync, rmSync, copyFileSync, chmodSync } from 'node:fs';
-import { Readable } from 'node:stream';
-import { pipeline } from 'node:stream/promises';
+import { existsSync, mkdirSync, rmSync, copyFileSync, chmodSync } from 'node:fs';
+import { download } from './whisperLocal';
 import path from 'node:path';
 import { log } from './logger';
 import { isWin, TAR_EXE } from './platform';
@@ -25,6 +24,13 @@ const PY_BUILD: Record<string, string> = {
   'darwin-x64': 'x86_64-apple-darwin-install_only',
   'win32-x64': 'x86_64-pc-windows-msvc-install_only',
   'linux-x64': 'x86_64-unknown-linux-gnu-install_only',
+};
+// do SHA256SUMS oficial da release 20241219 — trocar junto com PY/PY_TAG
+const PY_SHA256: Record<string, string> = {
+  'darwin-arm64': '8c12ffb8c5b98ee0bd7ab2d422b6a69a0a341bad0b8958f7ae119cd2ee954902',
+  'darwin-x64': '9220f526950936a6306f19392584e3dac7033b60467a09f86cff6b9c1d970841',
+  'win32-x64': '4b85ede0b442d7832a97f592843b51d8e7e4ecc7c4723914b391289bed321cf7',
+  'linux-x64': '579aa5409eb2d10df075baa9b4d53fef52a6e3f8b991907a54a25525f1f1151c',
 };
 
 export function voiceInstallDir(): string {
@@ -61,7 +67,7 @@ async function systemPython(): Promise<string | null> {
         p.on('close', () => resolve(s.trim()));
       });
       const [maj, min] = out.split('.').map(Number);
-      if (maj === 3 && min >= 10 && min <= 12) return cmd;
+      if (maj === 3 && min >= 11 && min <= 12) return cmd; // pins do requirements.txt pedem 3.11+
     } catch {
       // tenta o próximo
     }
@@ -78,9 +84,7 @@ async function baixarPython(dir: string, prog: Progress): Promise<string> {
   const tgz = path.join(dir, 'python.tar.gz');
   prog('Baixando Python', `${PY} (~30 MB)`);
 
-  const res = await fetch(url);
-  if (!res.ok || !res.body) throw new Error(`Download do Python falhou (HTTP ${res.status})`);
-  await pipeline(Readable.fromWeb(res.body as never), createWriteStream(tgz));
+  await download(url, tgz, PY_SHA256[key]);
 
   prog('Extraindo Python');
   // tar existe no macOS, no Linux e no Windows 10+ (bsdtar em System32)

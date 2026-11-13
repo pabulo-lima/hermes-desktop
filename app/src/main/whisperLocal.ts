@@ -1,6 +1,7 @@
 import { app } from 'electron';
 import { spawn, execFile } from 'node:child_process';
-import { createWriteStream, existsSync, mkdirSync, readdirSync, writeFileSync, unlinkSync } from 'node:fs';
+import { createWriteStream, existsSync, mkdirSync, readdirSync, writeFileSync, unlinkSync, renameSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import os from 'node:os';
 import { log } from './logger';
@@ -10,7 +11,15 @@ import { isWin, TAR_EXE } from './platform';
 // no macOS/Linux usa o whisper-cli instalado (ex.: brew install whisper-cpp)
 const WHISPER_ZIP_URL =
   'https://github.com/ggml-org/whisper.cpp/releases/download/v1.9.1/whisper-bin-x64.zip';
-const MODEL_BASE = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/';
+// digest do asset na API de releases do GitHub
+const WHISPER_ZIP_SHA256 = '7d8be46ecd31828e1eb7a2ecdd0d6b314feafd82163038ab6092594b0a063539';
+// commit fixo (não `main`); hashes = oid LFS da API do Hugging Face
+const MODEL_BASE =
+  'https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/';
+const MODEL_SHA256: Record<string, string> = {
+  'ggml-small-q5_1.bin': 'ae85e4a935d7a567bd102fe55afc16bb595bdb618e11b2fc7591bc08120411bb',
+  'ggml-medium-q5_0.bin': '19fea4b380c3a618ec4723c3eef2eb785ffba0d0538cf43f8f235e7b3b34220f',
+};
 
 // 'leve' = o modelo pequeno do motor de voz leve. 'medio' = o mesmo porte de modelo que o
 // voice-server usa (medium), para o STT acelerado por Metal no Mac não perder qualidade.
@@ -63,23 +72,37 @@ export function whisperAvailable(): boolean {
   return isWin || findExe() !== null;
 }
 
-async function download(url: string, dest: string, onProgress: (pct: number) => void): Promise<void> {
+/** Baixa para `<dest>.part`, confere o SHA-256 e só então renomeia. Hash errado = apaga e falha. */
+export async function download(
+  url: string,
+  dest: string,
+  sha256: string,
+  onProgress: (pct: number) => void = () => undefined,
+): Promise<void> {
   const res = await fetch(url, { redirect: 'follow' });
   if (!res.ok || !res.body) throw new Error(`download falhou (${res.status}) para ${url}`);
   const total = Number(res.headers.get('content-length') ?? 0);
-  const out = createWriteStream(dest);
+  const part = `${dest}.part`;
+  const out = createWriteStream(part);
+  const hash = createHash('sha256');
   const reader = res.body.getReader();
   let received = 0;
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
     received += value.length;
+    hash.update(value);
     if (total > 0) onProgress(Math.round((received / total) * 100));
     await new Promise<void>((resolve, reject) =>
       out.write(Buffer.from(value), (err) => (err ? reject(err) : resolve())),
     );
   }
   await new Promise<void>((resolve) => out.end(resolve));
+  if (hash.digest('hex') !== sha256) {
+    unlinkSync(part);
+    throw new Error(`arquivo baixado não confere com o SHA-256 esperado: ${url}`);
+  }
+  renameSync(part, dest);
 }
 
 const installing = new Map<ModeloWhisper, Promise<void>>();
@@ -100,7 +123,7 @@ export function ensureWhisper(
       if (!isWin) throw new Error('voz leve requer o whisper.cpp: brew install whisper-cpp');
       const zip = path.join(dir, 'whisper.zip');
       onProgress('baixando voz leve…');
-      await download(WHISPER_ZIP_URL, zip, (p) => onProgress(`baixando voz leve… ${p}%`));
+      await download(WHISPER_ZIP_URL, zip, WHISPER_ZIP_SHA256, (p) => onProgress(`baixando voz leve… ${p}%`));
       // tar extrai zip
       await new Promise<void>((resolve, reject) => {
         execFile(TAR_EXE, ['-xf', zip, '-C', dir], (err) => (err ? reject(err) : resolve()));
@@ -110,7 +133,7 @@ export function ensureWhisper(
 
     if (!existsSync(modelPath(modelo))) {
       onProgress('baixando modelo de audição…');
-      await download(MODEL_BASE + MODELOS[modelo], modelPath(modelo), (p) =>
+      await download(MODEL_BASE + MODELOS[modelo], modelPath(modelo), MODEL_SHA256[MODELOS[modelo]], (p) =>
         onProgress(`baixando modelo… ${p}%`),
       );
     }

@@ -7,27 +7,26 @@ $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $vs = Join-Path $root 'voice-server'
 if (-not (Test-Path $vs)) { throw "Pasta voice-server não encontrada ao lado deste script." }
 
-if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
-    Write-Host "Instalando o gerenciador uv..."
-    Invoke-RestMethod https://astral.sh/uv/install.ps1 | Invoke-Expression
-    $env:Path = "$env:USERPROFILE\.local\bin;$env:Path"
-}
+# sem `irm | iex`: usa o Python 3.11 ja instalado (python.org ou winget install Python.Python.3.11)
+if (-not (Get-Command py -ErrorAction SilentlyContinue)) { throw "Instale o Python 3.11 (python.org) e rode de novo." }
 
 Set-Location $vs
 Write-Host "Criando ambiente Python 3.11..."
-uv venv --python 3.11 .venv
+py -3.11 -m venv .venv
+if ($LASTEXITCODE -ne 0) { throw "Python 3.11 nao encontrado (py -3.11)." }
+$py = Join-Path $vs '.venv\Scripts\python.exe'
 
 $gpu = [bool](Get-CimInstance Win32_VideoController | Where-Object { $_.Name -match 'NVIDIA' })
 if ($gpu) {
     Write-Host "GPU NVIDIA detectada - instalando PyTorch CUDA (download grande, ~2,5 GB)..."
-    uv pip install --python .venv torch torchaudio --index-url https://download.pytorch.org/whl/cu124
+    & $py -m pip install torch==2.11.0 torchaudio==2.11.0 --index-url https://download.pytorch.org/whl/cu128
 } else {
     Write-Host "AVISO: sem GPU NVIDIA. A voz completa ficara LENTA em CPU - considere ficar na voz leve."
-    uv pip install --python .venv torch torchaudio
+    & $py -m pip install torch==2.11.0 torchaudio==2.11.0
 }
 
 Write-Host "Instalando dependencias de voz..."
-uv pip install --python .venv -r requirements.txt
+& $py -m pip install -r requirements.txt
 
 # aponta o app para este voice-server e ativa o motor XTTS
 $sf = "$env:APPDATA\hermes-assistente\settings.json"
