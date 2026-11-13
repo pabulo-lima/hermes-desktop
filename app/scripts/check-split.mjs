@@ -22,7 +22,7 @@ await build({
       setup(b) {
         b.onResolve({ filter: /^electron$/ }, () => ({ path: 'electron', namespace: 'stub' }));
         b.onLoad({ filter: /.*/, namespace: 'stub' }, () => ({
-          contents: 'export const app = { getPath: () => "/tmp", getVersion: () => "0" };',
+          contents: 'export const app = { getPath: () => "/tmp", getVersion: () => "0" }; export const safeStorage = { isEncryptionAvailable: () => false };',
         }));
       },
     },
