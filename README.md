@@ -122,6 +122,24 @@ aberto e some em tela cheia (Windows) • hibernação da GPU configurável.
   (macOS), com uma conversa por arquivo em `chats/`. Nada é enviado para lugar nenhum
   além do seu próprio Hermes.
 
+## Segurança e uso com Hermes local
+
+- **Compile do código-fonte** — não use o `.exe` das Releases do autor (não é assinado nem
+  verificável): `cd app && npm ci && npm run build && npx electron .` (instalador:
+  `npm run dist:win`).
+- Token da API e chave Groq ficam cifrados pelo sistema (`safeStorage`: DPAPI/Keychain) e
+  nunca voltam para a interface; os downloads (whisper.cpp, Python, modelos) são conferidos
+  por SHA-256 fixo.
+- **Hermes local (Docker no mesmo PC, sem VPS/SSH):** em Configurações, preencha
+  *Endereço da API do Hermes* com `http://127.0.0.1:8642`, o token (`API_SERVER_KEY`) e
+  deixe a VPS em branco. Sem VPS só endereços locais são aceitos. As mensagens proativas
+  ficam desligadas (elas dependem de SSH).
+- No container do Hermes: `API_SERVER_ENABLED=true` e `API_SERVER_KEY=...` no `.env`, e
+  publique a porta **só em loopback**: `ports: ["127.0.0.1:8642:8642"]`. O API server do
+  Hermes escuta em `127.0.0.1` por padrão (`API_SERVER_HOST`, ver
+  `gateway/platforms/api_server.py`); com mapeamento de porta do Docker defina
+  `API_SERVER_HOST=0.0.0.0` dentro do container (ou use `network_mode: host` e deixe o padrão).
+
 ## Licença
 
 MIT — use, modifique e distribua à vontade.
